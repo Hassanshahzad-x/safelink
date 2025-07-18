@@ -3,51 +3,49 @@
 ## LOCAL
 
 Docker build
-
 ```
-docker build -t safelink-creator -f creator/Dockerfile .
+docker build -t {{CREATOR_IMAGE_NAME}} -f {{CREATOR_DOCKERFILE_PATH}} .
 ```
 
-Container run
+Run container
 
 ```
 docker run -d \
---name safelink-creator \
---env-file /Users/hassanshahzad/Desktop/Projects/safelinks/backend/.env \
--v /Users/hassanshahzad/Desktop/Projects/safelinks/backend/gcp-service-account.json:/app/gcp-service-account.json \
+--name {{CREATOR_CONTAINER_NAME}} \
+--env-file {{LOCAL_ENV_FILE_PATH}} \
+-v {{LOCAL_GCP_KEY_PATH}}:/app/gcp-service-account.json \
 -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-service-account.json \
--p 5002:5000 safelink-creator
+-p {{LOCAL_PORT}}:5000 {{CREATOR_IMAGE_NAME}}
 ```
-
 ## CLOUD
 
-Docker build
+Build Docker image
 
 ```
-docker build -t asia-south1-docker.pkg.dev/safelink-466211/safelinks-repo/safelink-creator -f creator/Dockerfile .
+docker build -t {{GCP_DOCKER_IMAGE_PATH}} -f {{CREATOR_DOCKERFILE_PATH}} .
 ```
 
-Docker Push to GCP
-
+Push using Docker Buildx
 ```
-cd backend/creator
+cd {{CREATOR_SERVICE_DIRECTORY}}
 
 docker buildx build \
 --platform linux/amd64 \
---tag asia-south1-docker.pkg.dev/safelink-466211/safelinks-repo/safelink-creator \
+--tag {{GCP_DOCKER_IMAGE_PATH}} \
 --file Dockerfile \
 .. \
 --push
 ```
 
-Container Push to GCP
+Deploy to GCP
+
 ```
-gcloud run deploy safelink-creator \
---image=asia-south1-docker.pkg.dev/safelink-466211/safelinks-repo/safelink-creator \
+gcloud run deploy {{CREATOR_SERVICE_NAME}} \
+--image={{GCP_DOCKER_IMAGE_PATH}} \
 --platform=managed \
---region=asia-south1 \
+--region={{GCP_REGION}} \
 --allow-unauthenticated \
---set-env-vars=BACKEND_BASE_URL=https://safelink-resolver-568539115852.asia-south1.run.app
+--set-env-vars=RESOLVER_SERVICE_URL={{RESOLVER_PUBLIC_URL}}
 ```
 
 # RESOLVER SERVICE
@@ -57,45 +55,46 @@ gcloud run deploy safelink-creator \
 Docker build
 
 ```
-docker build -t safelink-resolver -f resolver/Dockerfile .
+docker build -t {{RESOLVER_IMAGE_NAME}} -f {{RESOLVER_DOCKERFILE_PATH}} .
 ```
 
-Container run
+Run container
 
 ```
 docker run -d \
---name safelink-resolver \
--v /Users/hassanshahzad/Desktop/Projects/safelinks/backend/gcp-service-account.json:/app/gcp-service-account.json \
+--name {{RESOLVER_CONTAINER_NAME}} \
+-v {{LOCAL_GCP_KEY_PATH}}:/app/gcp-service-account.json \
 -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-service-account.json \
--p 5003:5000 safelink-resolver
+-p {{LOCAL_PORT}}:5000 {{RESOLVER_IMAGE_NAME}}
 ```
 
 ## CLOUD
 
-Docker build
+Build Docker image
 
 ```
-docker build -t asia-south1-docker.pkg.dev/safelink-466211/safelinks-repo/safelink-resolver -f resolver/Dockerfile .
+docker build -t {{GCP_DOCKER_IMAGE_PATH}} -f {{RESOLVER_DOCKERFILE_PATH}} .
 ```
 
-Docker Push to GCP
+Push using Docker Buildx
 
 ```
-cd backend/resolver
+cd {{RESOLVER_SERVICE_DIRECTORY}}
 
 docker buildx build \
 --platform linux/amd64 \
---tag asia-south1-docker.pkg.dev/safelink-466211/safelinks-repo/safelink-resolver \
+--tag {{GCP_DOCKER_IMAGE_PATH}} \
 --file Dockerfile \
 .. \
 --push
 ```
 
-Container Push to GCP
+Deploy to GCP
+
 ```
-gcloud run deploy safelink-resolver \
---image=asia-south1-docker.pkg.dev/safelink-466211/safelinks-repo/safelink-resolver \
+gcloud run deploy {{RESOLVER_SERVICE_NAME}} \
+--image={{GCP_DOCKER_IMAGE_PATH}} \
 --platform=managed \
---region=asia-south1 \
---allow-unauthenticated  
+--region={{GCP_REGION}} \
+--allow-unauthenticated
 ```
