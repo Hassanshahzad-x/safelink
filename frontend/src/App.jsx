@@ -56,7 +56,7 @@ function App() {
           <div className="inline-flex items-center justify-center mb-3">
             <LinkIcon className="h-10 w-10 text-purple-300 mr-3" />
             <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-blue-300">
-              SafeLink
+              SafeLinks
             </h1>
           </div>
           <p className="text-purple-200 text-lg">

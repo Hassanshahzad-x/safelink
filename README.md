@@ -1,10 +1,10 @@
-# SafeLink
-SafeLink is a microservice-based platform for generating, resolving, and managing expiring access links. It's built with Flask, Docker, and Google Cloud Run, and is designed to be fast, scalable, and easy to integrate with other platforms.
+# SafeLinks
+SafeLinks is a microservice-based platform for generating, resolving, and managing expiring access links. It's built with Flask, Docker, and Google Cloud Run, and is designed to be fast, scalable, and easy to integrate with other platforms.
 
 ## 🧠 What Problem Does It Solve?
 Sometimes you want to give access to something, a file, a URL, a private page but only temporarily. Maybe just for a few hours. Maybe once. Maybe to one person.
 
-SafeLink handles this by generating secure expiring links that auto-expire based on time, usage, or both. No more manually deleting links. No more over-permissioned sharing.
+SafeLinks handles this by generating secure expiring links that auto-expire based on time, usage, or both. No more manually deleting links. No more over-permissioned sharing.
 
 ## 🛠️ Architecture Overview
 This system is split into three independent services, each deployed as a Docker container to Google Cloud Run:
