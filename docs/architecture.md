@@ -97,9 +97,12 @@ must use a separate origin (for example `go.<domain>` and `app.<domain>`).
 
 What the code actually does, and what the privacy page promises:
 
-- Account deletion removes the account, all links and all activity in one transaction,
-  then deletes the Supabase Auth user. Links stop resolving at once. If the auth call fails
-  the API returns `502` and the user can retry.
+- Account deletion removes all links and all activity in one transaction and marks the
+  `accounts` row `deleted` (a tombstone holding only the auth user ID). It then deletes the
+  Supabase Auth user, which holds the email and password. Links stop resolving at once. The
+  tombstone stops a still-valid access token from recreating the account, which would
+  otherwise also undo a suspension. If the auth call fails the API returns `502` and the
+  user can retry.
 - Inactive links and old activity are removed on the retention schedule above.
 - Logs contain no destination URLs, passcodes, tokens or raw IPs.
 - Abuse reports are kept until an operator resolves them.

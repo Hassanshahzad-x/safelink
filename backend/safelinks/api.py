@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from . import repository as repo
-from .auth import Principal, current_user
+from .auth import Principal, current_user, current_user_any_status
 from .config import settings
 from .domain import (
     AppError,
@@ -97,7 +97,9 @@ async def me(user: User):
 
 
 @router.delete("/account", status_code=204)
-async def delete_account(request: Request, user: User):
+async def delete_account(
+    request: Request, user: Annotated[Principal, Depends(current_user_any_status)]
+):
     async with request.app.state.pool.acquire() as conn:
         deleted = await repo.delete_account(conn, user.user_id)
     event("account_deleted", links_deleted=deleted)

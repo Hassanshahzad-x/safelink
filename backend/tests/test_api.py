@@ -308,6 +308,37 @@ async def test_delete_account(api_client, alice, bob, pool):
     assert await pool.fetchval("select count(*) from links where id=$1", theirs["id"]) == 1
 
 
+async def test_deleted_account_is_not_recreated_and_stays_blocked(
+    api_client, resolver_client, alice, pool
+):
+    # A suspended user deletes their account, then reuses the still-valid token.
+    link = await create_link(api_client, alice)
+    await pool.execute("update accounts set status='suspended' where id=$1", uuid.UUID(alice.id))
+    assert (await api_client.delete("/api/v1/account", headers=alice.headers)).status_code == 204
+    assert (await api_client.get("/api/v1/me", headers=alice.headers)).status_code == 401
+    r = await api_client.post(
+        "/api/v1/links",
+        json={"url": "https://example.com", "ttl_hours": 1, "max_clicks": 1},
+        headers=alice.headers,
+    )
+    assert r.status_code == 401
+    assert (await resolver_client.get(f"/r/{link['id']}")).status_code == 404
+    row = await pool.fetchrow(
+        "select status, deleted_at from accounts where id=$1", uuid.UUID(alice.id)
+    )
+    assert row["status"] == "deleted" and row["deleted_at"] is not None
+    # Retrying deletion (after a failed auth call) still works; admin cannot revive it.
+    assert (await api_client.delete("/api/v1/account", headers=alice.headers)).status_code == 204
+    from safelinks import repository as repo
+
+    async with pool.acquire() as conn:
+        assert not await repo.set_account_status(conn, alice.id, "active")
+    assert (
+        await pool.fetchval("select status from accounts where id=$1", uuid.UUID(alice.id))
+        == "deleted"
+    )
+
+
 async def test_delete_account_calls_auth_admin(api_client, alice, override, monkeypatch):
     import httpx
 

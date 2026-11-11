@@ -40,7 +40,7 @@ async def set_account_status(conn: asyncpg.Connection, user_id: str, status: str
         """
         update accounts set status = $2,
             suspended_at = case when $2 = 'suspended' then now() else null end
-        where id = $1
+        where id = $1 and status <> 'deleted'
         """,
         user_id,
         status,
@@ -49,11 +49,21 @@ async def set_account_status(conn: asyncpg.Connection, user_id: str, status: str
 
 
 async def delete_account(conn: asyncpg.Connection, user_id: str) -> int:
-    """Delete the account and (via cascade) all of its links. Returns links deleted."""
+    """Delete all links and activity, and tombstone the account. Returns links deleted.
+
+    The row stays with status 'deleted' so a still-valid token cannot recreate it.
+    """
     async with conn.transaction():
-        n = await conn.fetchval("select count(*) from links where owner_id = $1", user_id)
         await conn.execute("delete from audit_events where owner_id = $1", user_id)
-        await conn.execute("delete from accounts where id = $1", user_id)
+        n = await conn.fetchval(
+            "with d as (delete from links where owner_id = $1 returning 1) select count(*) from d",
+            user_id,
+        )
+        await conn.execute(
+            "update accounts set status = 'deleted', deleted_at = now(), suspended_at = null"
+            " where id = $1",
+            user_id,
+        )
     return n
 
 

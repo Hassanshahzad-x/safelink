@@ -117,8 +117,9 @@ first `revoked_at`. `404 LINK_NOT_FOUND` for missing or foreign links.
 
 ### `DELETE /api/v1/account` → `204`
 
-Deletes the account, all of its links and their activity, then deletes the Supabase Auth
-user. Links stop resolving immediately. If the auth deletion fails, the response is
+Deletes all of the account's links and their activity, marks the account deleted, then
+deletes the Supabase Auth user. Links stop resolving immediately. Afterwards every other
+endpoint returns `401` for that user, even with a token that has not expired. If the auth deletion fails, the response is
 `502 AUTH_DELETE_FAILED`. The data is already gone in that case, and retrying is safe.
 
 ### `POST /api/v1/reports` → `202` (no auth)

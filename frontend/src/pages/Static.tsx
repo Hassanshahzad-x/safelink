@@ -59,8 +59,9 @@ export function Privacy() {
         <li>Expired, exhausted, and revoked links are deleted 30 days after they stop working.</li>
         <li>Link activity records are deleted after 90 days.</li>
         <li>
-          Deleting your account removes your account, all of your links, and their activity immediately. Links stop
-          working at once.
+          Deleting your account removes your email, password, all of your links, and their activity immediately.
+          Links stop working at once. We keep only an anonymous account ID marked as deleted, so the account cannot
+          be reused.
         </li>
       </ul>
       <h2>Contact</h2>

@@ -61,7 +61,16 @@ async def verify_token(token: str) -> dict:
 
 
 async def current_user(request: Request) -> Principal:
-    """FastAPI dependency: verify the bearer token and make sure an account row exists."""
+    """FastAPI dependency: a signed-in user whose account has not been deleted."""
+    user = await current_user_any_status(request)
+    if user.status == "deleted":
+        raise _unauthorized()
+    return user
+
+
+async def current_user_any_status(request: Request) -> Principal:
+    """Verify the bearer token and make sure an account row exists. Only account
+    deletion uses this directly, so a failed deletion can be retried."""
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise _unauthorized()

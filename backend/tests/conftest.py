@@ -49,7 +49,7 @@ async def pool():
         await admin.execute(f"create database {TEST_DB}")
     finally:
         await admin.close()
-    assert await migrate(TEST_URL) == ["001_init"]
+    assert await migrate(TEST_URL) == ["001_init", "002_account_tombstone"]
     assert await migrate(TEST_URL) == []  # idempotent
     p = await create_pool(TEST_URL)
     for app in (api.app, resolver.app, remover.app):
