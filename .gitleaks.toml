@@ -1,0 +1,10 @@
+# Default gitleaks rules, plus one allowlisted value: the local-only service_role JWT used by
+# docker compose. It is signed with the public dev secret in .env.example and grants nothing
+# outside a local stack. Allowlisted by exact value so a real key in the same file still fails.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local docker compose service_role JWT"
+regexTarget = "match"
+regexes = ['''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtbG9jYWwiLCJpYXQiOjE3NjcyMjU2MDAsImV4cCI6MjA4Mjc1ODQwMH0\.OVTA9qgofuhwpm9mbrmBHnvNn59wWHJYzd775xsIhaI''']

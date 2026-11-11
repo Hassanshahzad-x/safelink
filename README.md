@@ -1,75 +1,150 @@
 # SafeLinks
-SafeLinks is a microservice-based platform for generating, resolving, and managing expiring access links. It's built with Flask, Docker, and Google Cloud Run, and is designed to be fast, scalable, and easy to integrate with other platforms.
 
-## 🧠 What Problem Does It Solve?
-Sometimes you want to give access to something, a file, a URL, a private page but only temporarily. Maybe just for a few hours. Maybe once. Maybe to one person.
+SafeLinks creates short links that stop working after a set time, a set number of visits,
+or when the owner revokes them. Owners can add an optional passcode. Recipients get a plain
+server-rendered page or a redirect, and never need an account.
 
-SafeLinks handles this by generating secure expiring links that auto-expire based on time, usage, or both. No more manually deleting links. No more over-permissioned sharing.
+SafeLinks controls access to the short link, not to the destination. After a recipient
+reaches the destination they can copy or share it. See [the terms page](frontend/src/pages/Static.tsx).
 
-## 🛠️ Architecture Overview
-This system is split into three independent services, each deployed as a Docker container to Google Cloud Run:
+## Stack
 
-### 1. creator
-* Creates and stores expiring links.
+| Part | Technology |
+| --- | --- |
+| Web app | TypeScript, React 19, React Router 7, Tailwind CSS 4, Vite, served by nginx |
+| Owner API | Python 3.12, FastAPI (`safelinks.api`) |
+| Resolver | FastAPI, server-rendered HTML with no JavaScript (`safelinks.resolver`) |
+| Cleanup | FastAPI endpoint plus CLI (`safelinks.remover`), triggered on a schedule |
+| Auth | Supabase Auth (GoTrue). Local: `supabase/auth` container. Hosted: a Supabase project |
+| Database | PostgreSQL 16. Local: Docker. Hosted: Supabase Postgres or any Postgres |
+| Local email | Mailpit (catches confirmation and password-reset emails) |
 
-* Accepts payload with original URL + expiration rules
+One backend image runs all three services. The `SERVICE` environment variable selects
+`api`, `resolver` or `remover`.
 
-* Generates unique shortlink ID
+```
+browser ──> web (nginx :8080) ──/api/*──────> api (FastAPI)
+                              └─/auth/v1/*──> auth (Supabase GoTrue)
+recipient ─> resolver (FastAPI :8001) /r/{id}
+schedule ──> remover (FastAPI :8002) POST /internal/cleanup
+api, resolver, remover, auth ──> Postgres
+```
 
-* Stores metadata securely in Firestore
+More detail: [architecture and decisions](docs/architecture.md), [API reference](docs/api.md),
+[operations and runbooks](docs/operations.md).
 
-* Returns the full public link to the client
+## Run everything locally
 
-### 2. resolver
-* Resolves short links and handles expiration logic.
+Requirements: Docker with Compose v2.
 
-* Receives shortlink hit
+```sh
+docker compose up --build
+```
 
-* Validates against expiration rules (time or click count)
+No `.env` file is needed. Copy `.env.example` to `.env` only to change a default.
 
-* Redirects to original URL or returns expired message
+| URL | What |
+| --- | --- |
+| http://localhost:8080 | Web app (also proxies `/api` and `/auth/v1`) |
+| http://localhost:8001/r/{id} | Resolver (short links point here) |
+| http://localhost:8025 | Mailpit inbox for sign-up and reset emails |
+| http://localhost:8000 | Owner API, direct |
+| http://localhost:8002 | Cleanup service, direct |
+| http://localhost:9999 | Supabase Auth, direct |
+| localhost:54329 | Postgres (`postgres` / `postgres`, database `safelinks`) |
 
-### 3. delete
-* Manages manual deletions and automatic cleanup.
+All ports bind to 127.0.0.1 only.
 
-* Exposes an endpoint to explicitly delete links
+First run:
 
-* Supports scheduled Firestore cleanup of expired links
+1. Open http://localhost:8080 and sign up.
+2. Open http://localhost:8025 and click the confirmation link.
+3. Create a link and open the short URL in another browser.
 
-## ☁️ Deployment
-All services are built as Docker images and deployed to Google Cloud Run with GCP's Artifact Registry and Firestore as the backend DB.
+Set `MAILER_AUTOCONFIRM=true` in `.env` to skip email confirmation.
 
-Each service includes:
+The `migrate` service applies `backend/safelinks/migrations/*.sql` before the backend
+services start. The `cleanup-schedule` service calls the remover every
+`CLEANUP_INTERVAL_SECONDS` (default 3600). It stands in for Cloud Scheduler.
 
-* Dockerfile for containerization
+Stop with `docker compose down`. Add `-v` to delete the database volume.
 
-* .env support for local development
+## Develop
 
-* gcp-service-account.json for GCP auth
+Run the database and auth in Docker, and the app processes on the host.
 
-> You can run the services locally using docker run or deploy them using gcloud run deploy.
+```sh
+docker compose up -d db mailpit auth migrate
 
-## 🔐 Tech Stack
+# Backend (needs uv: https://docs.astral.sh/uv/)
+cd backend
+uv sync
+SUPABASE_JWT_SECRET=local-dev-jwt-secret-change-me-at-least-32-chars \
+  uv run uvicorn safelinks.api:app --port 8000 --reload
+uv run uvicorn safelinks.resolver:app --port 8001 --reload   # second terminal
 
-Frontend: *React*
+# Frontend (Node 24, see frontend/.nvmrc)
+cd frontend
+npm ci
+npm run dev        # http://localhost:5173, proxies /api and /auth/v1 like nginx does
+```
 
-Backend: *Flask*
+Operator commands (suspend accounts, revoke links, review abuse reports):
 
-Database: *Firestore*
+```sh
+cd backend && uv run python -m safelinks.admin --help
+```
 
-Cloud Platform: *Google Cloud Run*
+## Test
 
-Containerization: *Docker*
+Backend tests need a Postgres server. They create and drop a `safelinks_test` database.
 
-Authentication: *Service Account with scoped permissions*
+```sh
+docker compose up -d db
+cd backend
+uv run ruff format --check . && uv run ruff check .
+uv run pytest            # uses localhost:54329; override with TEST_DATABASE_ADMIN_URL
+```
 
-## 🚀 Example Use Case
-Let’s say you're sending someone a confidential document and want the link to expire in 24 hours or after a single click.
+Frontend:
 
-You hit the creator service with your document URL and expiration rules.
+```sh
+cd frontend
+npm run typecheck && npm run lint && npm test && npm run build
+```
 
-It gives you a shortlink and stores it in Firestore. The user clicks it → the resolver service checks if the link is valid and redirects.
+CI (`.github/workflows/ci.yml`) runs all of the above on every pull request. It also builds
+both Docker images, validates the compose file, audits dependencies (`pip-audit`,
+`npm audit`) and scans for secrets (`gitleaks`, config in `.gitleaks.toml`).
 
-Once expired, the link becomes useless.
+## Configuration
 
-Optionally, the delete service cleans it up in the background.
+Backend settings are environment variables, all listed with defaults in
+[`backend/safelinks/config.py`](backend/safelinks/config.py). The ones you must set outside
+local development:
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_ENV=production` | Turns on production checks (no default salt, no wildcard CORS) |
+| `DATABASE_URL` | Postgres connection string |
+| `SUPABASE_JWT_SECRET` or `SUPABASE_JWKS_URL` | Verifies Supabase access tokens |
+| `SUPABASE_JWT_ISSUER` | Expected `iss`, for example `https://<ref>.supabase.co/auth/v1` |
+| `SUPABASE_AUTH_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Deletes the sign-in identity on account deletion |
+| `RESOLVER_BASE_URL` | Public origin of the resolver; short URLs are built from it |
+| `FRONTEND_URL`, `CORS_ORIGINS` | Public origin of the web app |
+| `RATE_LIMIT_SALT` | Secret salt for hashed client IPs |
+| `CLEANUP_TOKEN` | Bearer token for `POST /internal/cleanup` |
+| `TRUSTED_PROXY_HOPS` | Proxies in front of the service that append to `X-Forwarded-For` |
+
+The web app reads two optional build arguments: `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY`. Leave them empty to use the same-origin `/auth/v1` proxy.
+
+## Status
+
+Verified locally: the full compose stack, the API and resolver end to end, the browser
+flows (sign-up, email confirmation, create, passcode visit, revoke, password reset, account
+deletion), and scheduled cleanup.
+
+Not verified: any cloud deployment, Cloud Scheduler, a production domain, or a hosted
+Supabase project. [docs/operations.md](docs/operations.md) describes those steps but they have
+not been run.

@@ -1,0 +1,151 @@
+# Local stack: Postgres, Supabase Auth, Mailpit, API, resolver, remover, cleanup schedule
+# and the web app.  docker compose up --build   then open http://localhost:8080
+name: safelinks
+
+x-backend: &backend
+  build: ./backend
+  image: safelinks-backend:dev
+  restart: unless-stopped
+  environment: &backend-env
+    APP_ENV: development
+    DATABASE_URL: postgresql://postgres:postgres@db:5432/safelinks
+    SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-local-dev-jwt-secret-change-me-at-least-32-chars}
+    SUPABASE_AUTH_URL: http://auth:9999
+    SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UtbG9jYWwiLCJpYXQiOjE3NjcyMjU2MDAsImV4cCI6MjA4Mjc1ODQwMH0.OVTA9qgofuhwpm9mbrmBHnvNn59wWHJYzd775xsIhaI}
+    RESOLVER_BASE_URL: http://localhost:8001
+    FRONTEND_URL: http://localhost:8080
+    CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+    RATE_LIMIT_SALT: ${RATE_LIMIT_SALT:-local-dev-salt}
+    CLEANUP_TOKEN: ${CLEANUP_TOKEN:-local-dev-cleanup-token}
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  db:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: safelinks
+    ports: ["127.0.0.1:54329:5432"]
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/db-init.sql:/docker-entrypoint-initdb.d/01-auth-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d safelinks"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    restart: unless-stopped
+    ports: ["127.0.0.1:8025:8025"]
+
+  auth:
+    image: supabase/auth:v2.197.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: 9999
+      # Email links go through the web app's /auth/v1 proxy.
+      API_EXTERNAL_URL: http://localhost:8080/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:postgres@db:5432/safelinks?search_path=auth
+      GOTRUE_SITE_URL: http://localhost:8080
+      GOTRUE_URI_ALLOW_LIST: http://localhost:8080/**,http://localhost:5173/**
+      GOTRUE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-local-dev-jwt-secret-change-me-at-least-32-chars}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: ${MAILER_AUTOCONFIRM:-false}
+      GOTRUE_PASSWORD_MIN_LENGTH: 8
+      GOTRUE_SMTP_HOST: mailpit
+      GOTRUE_SMTP_PORT: 1025
+      # No SMTP credentials: Go refuses plain-text auth without TLS, and Mailpit needs none.
+      GOTRUE_SMTP_ADMIN_EMAIL: no-reply@safelinks.local
+      GOTRUE_SMTP_SENDER_NAME: SafeLinks
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: 100
+    ports: ["127.0.0.1:9999:9999"]
+
+  migrate:
+    image: safelinks-backend:dev
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/safelinks
+    command: ["python", "-m", "safelinks.db"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE: api
+      TRUSTED_PROXY_HOPS: 1   # reached through the web container's nginx
+    ports: ["127.0.0.1:8000:8080"]
+
+  resolver:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE: resolver
+    ports: ["127.0.0.1:8001:8080"]
+
+  remover:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE: remover
+    ports: ["127.0.0.1:8002:8080"]
+
+  # Local stand-in for Cloud Scheduler: trigger the remover's private endpoint on a timer.
+  cleanup-schedule:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      INTERVAL: ${CLEANUP_INTERVAL_SECONDS:-3600}
+    depends_on:
+      remover:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    command:
+      - python
+      - -c
+      - |
+        import os, time, urllib.request
+        while True:
+            req = urllib.request.Request("http://remover:8080/internal/cleanup", method="POST",
+                headers={"authorization": "Bearer " + os.environ["CLEANUP_TOKEN"]})
+            try:
+                print(urllib.request.urlopen(req, timeout=300).read().decode(), flush=True)
+            except Exception as exc:
+                print(f"cleanup failed: {exc}", flush=True)
+            time.sleep(int(os.environ["INTERVAL"]))
+
+  web:
+    build: ./frontend
+    image: safelinks-web:dev
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    ports: ["127.0.0.1:8080:8080"]
+
+volumes:
+  db-data:

@@ -1,0 +1,13 @@
+{
+  "name": "SafeLinks",
+  "short_name": "SafeLinks",
+  "description": "Share links with an expiry.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F8F5",
+  "theme_color": "#17211F",
+  "icons": [
+    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/app-icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

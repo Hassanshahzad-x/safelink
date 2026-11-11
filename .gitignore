@@ -1,0 +1,9 @@
+.env
+node_modules/
+dist/
+.DS_Store
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.playwright-mcp/
